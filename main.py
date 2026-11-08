@@ -14,6 +14,7 @@ En la web:    pip install pygbag
 Controles:
   ESPACIO / →   siguiente flor
   ←             flor anterior
+  M             pausar / reanudar la música
   S             guardar captura (flor.png)
   ESC           salir
 """
@@ -40,8 +41,18 @@ DEDICATORIA = ["Estas flores jamás se marchitarán.",      # texto de arriba, u
                "Al igual que mi amor por ti, florecen eternamente."]
 
 FONDO = (8, 6, 22)
+
+# ---------------------------------------------------------------------------
+# MÚSICA DE FONDO: copia tu canción en la misma carpeta que main.py con
+# alguno de estos nombres. Se usa el primero que encuentre.
+#   - "cancion.ogg"  -> funciona en el computador y en el navegador (recomendado)
+#   - "cancion.mp3"  -> funciona en el computador; en el navegador puede fallar
+# ---------------------------------------------------------------------------
+CANCIONES = ["cancion.ogg", "cancion.mp3"]
+VOLUMEN = 0.6                # de 0.0 (silencio) a 1.0 (máximo)
 LAGO_Y = ALTO - 145          # altura de la superficie del lago
 VELOCIDAD_CISNES = 22        # píxeles por segundo
+CADA_CUANTO_PAJAROS = (7, 14)  # segundos entre una bandada y la siguiente (mínimo, máximo)
 
 FLORES = [
     ("Peonía", "un amor que florece en capas"),
@@ -934,6 +945,125 @@ class Cisnes:
             sup.blit(img, (int(x) - ox, int(y) - oy))
 
 
+
+# ---------------------------------------------------------------------------
+# Pájaros que cruzan el cielo
+# ---------------------------------------------------------------------------
+PLUMAJES = {  # (lomo, pecho, cabeza, alas, pico)
+    "azulejo": ((60, 125, 235), (250, 150, 65), (75, 140, 240), (40, 90, 205), (60, 55, 70)),
+    "jilguero": ((250, 210, 40), (255, 232, 95), (255, 220, 60), (70, 65, 85), (245, 165, 85)),
+    "cardenal": ((222, 40, 52), (240, 70, 70), (232, 48, 58), (170, 25, 42), (250, 155, 65)),
+    "turquesa": ((40, 195, 160), (225, 248, 240), (45, 210, 180), (25, 140, 125), (60, 55, 70)),
+    "rosado": ((242, 110, 172), (255, 195, 215), (248, 125, 182), (192, 70, 142), (255, 205, 125)),
+    "lila": ((150, 110, 232), (232, 212, 255), (165, 122, 242), (110, 80, 202), (255, 195, 115)),
+}
+
+
+def pajaro(escala, aleteo, plumaje, semilla):
+    """Pajarito de puntos visto de lado, mirando a la derecha. `aleteo` va de -1 (alas
+    abajo) a 1 (alas arriba). Origen = centro del cuerpo. Devuelve (x, y, color)."""
+    rnd = random.Random(semilla)
+    s = escala
+    lomo, pecho, cabeza, alas, pico = PLUMAJES[plumaje]
+    pts = []
+
+    def ala(oscuro):
+        """Ala redondeada que gira sobre el hombro."""
+        ang = -1.45 + aleteo * 0.95            # 0 = arriba; negativo = hacia atrás
+        hx, hy = -0.05 * s, -0.22 * s
+        ux, uy = math.sin(ang), -math.cos(ang)
+        vx, vy = -uy, ux
+        base = tono(alas, 0.7) if oscuro else alas
+        for _ in range(int(s * s * 0.55)):
+            u = rnd.random()
+            w = math.sin(math.pi * u ** 0.7) * 0.3 * s
+            v = rnd.uniform(-1, 1)
+            d = u * 0.9 * s
+            col = mezclar(base, aclarar(base, 0.35), u)
+            if abs(v) > 0.82 or (not oscuro and 0.3 < u < 0.36):   # borde y franja de plumas
+                col = aclarar(base, 0.45)
+            pts.append((hx + ux * d + vx * v * w, hy + uy * d + vy * v * w, col))
+
+    ala(oscuro=True)                                    # ala del otro lado, detrás del cuerpo
+    for _ in range(int(s * 6)):                         # cola en abanico
+        u, v = rnd.random(), rnd.uniform(-1, 1)
+        x = (-0.45 - 0.55 * u) * s
+        y = (-0.04 + v * (0.05 + 0.13 * u) - 0.1 * u) * s
+        pts.append((x, y, mezclar(alas, aclarar(alas, 0.3), u)))
+    for _ in range(int(s * s * 1.1)):                   # cuerpo redondo: lomo arriba, pecho abajo
+        a, d = rnd.uniform(0, 6.28), math.sqrt(rnd.random())
+        x, y = math.cos(a) * d * 0.56 * s, math.sin(a) * d * 0.38 * s
+        t = (y / (0.38 * s) + 1) / 2
+        pts.append((x, y, mezclar(lomo, pecho, min(1.0, t * 1.4))))
+    for _ in range(int(s * s * 0.4)):                   # cabeza
+        a, d = rnd.uniform(0, 6.28), math.sqrt(rnd.random()) * 0.28 * s
+        pts.append((0.48 * s + math.cos(a) * d, -0.3 * s + math.sin(a) * d, cabeza))
+    for _ in range(int(s * 0.8)):                       # pico corto
+        u, v = rnd.random(), rnd.uniform(-1, 1)
+        pts.append(((0.74 + 0.22 * u) * s, (-0.28 + 0.03 * u + v * 0.06 * (1 - u)) * s, pico))
+    ojo = (0.58 * s, -0.36 * s)
+    for dx in (0, 1):
+        for dy in (0, 1):
+            pts.append((ojo[0] + dx, ojo[1] + dy, (25, 20, 35)))
+    pts.append((ojo[0] + 1, ojo[1], (255, 255, 255)))  # brillo del ojo
+    ala(oscuro=False)                                   # ala cercana, delante del cuerpo
+    return pts
+
+
+class Pajaros:
+    FOTOGRAMAS = 10
+    TAMANOS = (13, 16)
+
+    def __init__(self):
+        self.cuadros = {}   # (plumaje, escala, hacia_izquierda) -> lista de superficies
+        for plumaje in PLUMAJES:
+            for escala in self.TAMANOS:
+                cuadros = []
+                for f in range(self.FOTOGRAMAS):
+                    aleteo = math.sin(2 * math.pi * f / self.FOTOGRAMAS)
+                    lado = int(2.6 * escala)
+                    sup = pygame.Surface((lado, lado), pygame.SRCALPHA)
+                    for x, y, c in pajaro(escala, aleteo, plumaje, semilla=escala):
+                        sup.fill((*map(int, c), 255), (int(x) + lado // 2, int(y) + lado // 2, 2, 2))
+                    cuadros.append(sup)
+                self.cuadros[(plumaje, escala, False)] = cuadros
+                self.cuadros[(plumaje, escala, True)] = [pygame.transform.flip(c, True, False) for c in cuadros]
+        self.bandada = []           # [x, y_base, velocidad, clave_derecha, fase, ritmo, hacia_izquierda]
+        self.proxima = 3.0          # la primera bandada aparece a los 3 segundos
+
+    def nueva_bandada(self):
+        izquierda = random.random() < 0.5
+        cuantos = random.randint(2, 5)
+        y = random.uniform(150, 310)
+        vel = random.uniform(60, 90) * (-1 if izquierda else 1)
+        inicio = ANCHO + 50 if izquierda else -50
+        colores = random.sample(list(PLUMAJES), k=min(cuantos, len(PLUMAJES)))
+        for n in range(cuantos):                        # grupo suelto, no en formación
+            atraso = n * random.uniform(35, 60)
+            self.bandada.append([inicio + (atraso if izquierda else -atraso),
+                                 y + random.uniform(-45, 45),
+                                 vel * random.uniform(0.92, 1.08),
+                                 (colores[n % len(colores)], random.choice(self.TAMANOS)),
+                                 random.uniform(0, 1), random.uniform(2.6, 3.4), izquierda])
+
+    def dibujar(self, sup, t, dt):
+        self.proxima -= dt
+        if self.proxima <= 0:
+            self.nueva_bandada()
+            self.proxima = random.uniform(*CADA_CUANTO_PAJAROS)
+        vivos = []
+        for p in self.bandada:
+            p[0] += p[2] * dt
+            x, y_base, _, (plumaje, escala), fase, ritmo, izquierda = p
+            if (x > -80) if izquierda else (x < ANCHO + 80):
+                vivos.append(p)
+            f = int((t * ritmo + fase) * self.FOTOGRAMAS) % self.FOTOGRAMAS
+            img = self.cuadros[(plumaje, escala, izquierda)][f]
+            y = y_base + math.sin(t * 2.2 + fase * 6) * 9      # vuelo ondulado de pajarito
+            sup.blit(img, (int(x) - img.get_width() // 2, int(y) - img.get_height() // 2))
+        self.bandada = vivos
+
+
 # ---------------------------------------------------------------------------
 # Programa principal
 # ---------------------------------------------------------------------------
@@ -941,6 +1071,24 @@ async def main():
     pygame.init()
     pantalla = pygame.display.set_mode((ANCHO, ALTO))
     pygame.display.set_caption("Jardín de puntos")
+
+    musica = False
+    try:
+        pygame.mixer.init()
+        for archivo in CANCIONES:
+            try:
+                pygame.mixer.music.load(archivo)
+            except Exception:
+                continue                    # no está o no se puede leer: probar el siguiente
+            pygame.mixer.music.set_volume(VOLUMEN)
+            pygame.mixer.music.play(-1)     # -1 = se repite sin fin
+            musica = True
+            break
+        if not musica:
+            print("Sin música: no encontré", " ni ".join(CANCIONES))
+    except Exception as error:              # sin audio: la animación sigue igual
+        print("Sin música:", error)
+    musica_sonando = musica
     reloj = pygame.time.Clock()
 
     fuente_titulo = pygame.font.SysFont("georgia,garamond,serif", 34, italic=True)
@@ -965,6 +1113,7 @@ async def main():
     lago = Lago()
     lotos = Lotos()
     cisnes = Cisnes()
+    pajaros = Pajaros()
     indice = 0
     formas = [ajustar(g(), N_PUNTOS) for g in GENERADORES]   # se calculan una vez al inicio
     particulas.nueva_forma(formas[indice], explosion=False)
@@ -991,6 +1140,12 @@ async def main():
                     cambiar(1)
                 elif ev.key == pygame.K_LEFT:
                     cambiar(-1)
+                elif ev.key == pygame.K_m and musica:
+                    if musica_sonando:
+                        pygame.mixer.music.pause()
+                    else:
+                        pygame.mixer.music.unpause()
+                    musica_sonando = not musica_sonando
                 elif ev.key == pygame.K_s:
                     pygame.image.save(pantalla, "flor.png")
 
@@ -1006,6 +1161,7 @@ async def main():
 
         lago.dibujar(pantalla, t, dt)
         lotos.dibujar(pantalla, t, delante=False)
+        pajaros.dibujar(pantalla, t, dt)
         gemas.actualizar(t, dt)
         gemas.dibujar(pantalla, t)
         particulas.actualizar(t, dt)
